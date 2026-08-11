@@ -49,7 +49,7 @@ IMPORTANT: You must search through these predefined projects. If the user mentio
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: contents,
         config: {
           systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from either audio or text.
@@ -142,7 +142,7 @@ ${accounts.map((a: any) => `- ${a.name}`).join('\n')}`;
       });
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: [csvData],
         config: {
           systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from a CSV/Excel file.
