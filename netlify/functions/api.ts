@@ -42,10 +42,12 @@ IMPORTANT: You must search through these predefined projects. If the user mentio
     }
     if (text) {
       contents.push(text);
+    } else if (audioBase64) {
+      contents.push("لطفا این فایل صوتی را بررسی کن و اطلاعات تراکنش را استخراج کن.");
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-flash-latest",
       contents: contents,
       config: {
         systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from either audio or text.
@@ -137,7 +139,7 @@ ${accounts.map((a: any) => `- ${a.name}`).join('\n')}`;
     });
     
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-flash-latest",
       contents: [csvData],
       config: {
         systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from a CSV/Excel file.

@@ -322,7 +322,7 @@ export default function VoiceAssistant() {
                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         >
                           <option value="">-- انتخاب حساب --</option>
-                          {accounts?.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          {accounts?.map((a, idx) => <option key={a.id || idx} value={a.id}>{a.name}</option>)}
                         </select>
                         {item.card && !item.accountId && (
                           <div className="text-xs text-rose-400 mt-1">حساب تشخیص داده شده: {item.card} (یافت نشد)</div>
@@ -337,7 +337,7 @@ export default function VoiceAssistant() {
                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         >
                           <option value="">-- انتخاب پروژه --</option>
-                          {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          {projects?.map((p, idx) => <option key={p.id || idx} value={p.id}>{p.name}</option>)}
                         </select>
                         {item.project && !item.projectId && (
                           <div className="text-xs text-rose-400 mt-1">پروژه تشخیص داده شده: {item.project} (یافت نشد)</div>
