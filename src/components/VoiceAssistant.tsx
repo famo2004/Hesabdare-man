@@ -17,7 +17,6 @@ export default function VoiceAssistant() {
   const projects = useLiveQuery(() => db.projects.toArray());
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (parsedData && (accounts || projects)) {
@@ -43,7 +42,7 @@ export default function VoiceAssistant() {
         
         return newItem;
       });
-      
+
       if (changed) {
         setParsedData(updated);
       }
@@ -104,25 +103,6 @@ export default function VoiceAssistant() {
     }
   };
 
-  const processText = async (text: string) => {
-    try {
-      setIsProcessing(true);
-      const response = await fetch('/api/parse-speech', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, projects }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.details || data.error || 'Network error');
-      setParsedData(data);
-    } catch (err: any) {
-      console.error(err);
-      setError('خطا در ارتباط با سرور: ' + err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const processAudio = async (base64data: string, mimeType: string) => {
     try {
       const response = await fetch('/api/parse-speech', {
@@ -130,8 +110,10 @@ export default function VoiceAssistant() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audioBase64: base64data, mimeType, projects }),
       });
+      
       const data = await response.json();
       if (!response.ok) throw new Error(data.details || data.error || 'Network error');
+      
       setParsedData(data);
     } catch (err: any) {
       console.error(err);
@@ -149,146 +131,145 @@ export default function VoiceAssistant() {
   };
 
   const handleRemoveItem = (index: number) => {
-    if (parsedData) {
-      const newData = [...parsedData];
-      newData.splice(index, 1);
-      if (newData.length === 0) {
-        setParsedData(null);
-      } else {
-        setParsedData(newData);
-      }
+    if (!parsedData) return;
+    const newData = parsedData.filter((_, i) => i !== index);
+    if (newData.length === 0) {
+      setParsedData(null);
+    } else {
+      setParsedData(newData);
     }
   };
 
   const handleSaveSingle = async (index: number) => {
     if (!parsedData || !parsedData[index]) return;
     const item = parsedData[index];
-    if (!item.amount || !item.description) {
-      setError('مبلغ و توضیحات ضروری است.');
-      return;
+    await saveItemToDb(item);
+    handleRemoveItem(index);
+  };
+
+  const handleSave = async () => {
+    if (!parsedData) return;
+    
+    for (const item of parsedData) {
+      await saveItemToDb(item);
     }
+    
+    setParsedData(null);
+  };
+
+  const saveItemToDb = async (item: any) => {
     try {
       await db.transactions.add({
         type: item.type === 'income' ? 'income' : 'expense',
         amount: Number(item.amount),
         description: item.description,
-        accountId: item.accountId ? Number(item.accountId) : undefined,
-        projectId: item.projectId ? Number(item.projectId) : undefined,
-        card: item.card || '',
         date: item.date || new Date().toISOString().split('T')[0],
-        time: item.time || new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-        createdAt: new Date().toISOString()
+        time: item.time || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        categoryId: item.categoryId,
+        accountId: item.accountId,
+        projectId: item.projectId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
-      handleRemoveItem(index);
-    } catch (err) {
-      console.error(err);
-      setError('خطا در ذخیره تراکنش.');
-    }
-  };
-
-  const handleSave = async () => {
-    if (!parsedData || parsedData.length === 0) return;
-    
-    for (const item of parsedData) {
-      if (!item.amount || !item.description) {
-        setError('اطلاعات ضروری (مبلغ و بابت) در یکی از تراکنش‌ها وارد نشده است.');
-        return;
-      }
-    }
-
-    try {
-      const toAdd = parsedData.map(item => ({
-        type: item.type === 'income' ? 'income' : 'expense',
-        amount: Number(item.amount),
-        description: item.description,
-        accountId: item.accountId ? Number(item.accountId) : undefined,
-        projectId: item.projectId ? Number(item.projectId) : undefined,
-        card: item.card || '',
-        date: item.date || new Date().toISOString().split('T')[0],
-        time: item.time || new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-        createdAt: new Date().toISOString()
-      }));
-      
-      await db.transactions.bulkAdd(toAdd as any);
-      setParsedData(null);
-    } catch (err) {
-      console.error(err);
-      setError('خطا در ذخیره تراکنش.');
+    } catch (error) {
+      console.error('Error saving transaction:', error);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-white mb-4">دستیار صوتی هوشمند</h1>
-        <p className="text-white">
-          با صدای خود تراکنش‌ها را ثبت کنید.<br />
-          مثال: <span className="text-white font-medium">"۳۵۰ میلیون بابت بتن از حساب صادرات پرداخت شد"</span><br/>
-          مثال انتقال: <span className="text-white font-medium">"۱۰ میلیون از حساب ملت به تجارت واریز شد"</span>
-        </p>
-      </div>
-
-      <div className="flex flex-col items-center justify-center">
-        <div className="relative mb-4 flex flex-col items-center">
-          <div className="relative">
-            {isRecording && (
-              <motion.div 
-                initial={{ scale: 1, opacity: 0.5 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="absolute inset-0 bg-blue-500 rounded-full"
-              />
-            )}
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`relative z-10 p-8 rounded-full shadow-lg transition-all transform hover:scale-105 ${
-                isRecording ? 'bg-rose-500 hover:bg-rose-600 shadow-[0_0_25px_rgba(244,63,94,0.6)]' : 'bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.5)] hover:bg-blue-500 shadow-[0_0_25px_rgba(37,99,235,0.5)]'
-              } text-white`}
-            >
-              {isRecording ? <MicOff size={48} /> : <Mic size={48} />}
-            </button>
-          </div>
-          {isRecording && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-6 text-white font-bold text-lg animate-pulse"
-            >
-              در حال ضبط...
-            </motion.div>
-          )}
+    <div className="bg-slate-900 border border-slate-700/50 rounded-2xl p-6 shadow-xl mb-8 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-l from-blue-500 via-indigo-500 to-purple-500"></div>
+      
+      <div className="flex flex-col items-center justify-center space-y-6">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-white mb-2">دستیار صوتی هوشمند</h2>
+          <p className="text-slate-400 text-sm">
+            تراکنش‌های خود را به صورت صوتی بیان کنید تا به صورت خودکار ثبت شوند
+          </p>
+          <p className="text-slate-500 text-xs mt-1">
+            مثال: "۳۵۰ هزار تومان برای خرید از دیجی‌کالا از کارت ملت پرداخت کردم"
+          </p>
         </div>
 
-        <AnimatePresence>
-          {isProcessing && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="w-full bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-700 flex flex-col items-center justify-center"
-            >
-              <div className="flex items-center space-x-3 space-x-reverse text-white">
-                <Loader2 size={24} className="animate-spin" />
-                <span className="text-lg font-medium">در حال پردازش هوش مصنوعی...</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {error && (
-          <div className="mt-4 p-4 bg-rose-500/10 text-white rounded-xl w-full text-center">
+          <div className="w-full bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-sm text-center">
             {error}
           </div>
         )}
+
+        <div className="relative">
+          {isRecording && (
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute inset-0 bg-rose-500/20 rounded-full blur-xl"
+            />
+          )}
+          <button
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
+            disabled={isProcessing}
+            className={`
+              relative z-10 w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl
+              ${isProcessing ? 'bg-slate-800 border-2 border-slate-700' : 
+                isRecording ? 'bg-rose-500 scale-110 shadow-rose-500/50' : 'bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-105 hover:shadow-blue-500/30'}
+            `}
+          >
+            {isProcessing ? (
+              <Loader2 size={32} className="text-blue-400 animate-spin" />
+            ) : isRecording ? (
+              <MicOff size={32} className="text-white" />
+            ) : (
+              <Mic size={32} className="text-white" />
+            )}
+          </button>
+        </div>
+        
+        <div className="text-center h-6">
+          <AnimatePresence mode="wait">
+            {isRecording && (
+              <motion.span 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="text-rose-400 font-medium text-sm block"
+              >
+                در حال ضبط... (رها کنید تا پایان یابد)
+              </motion.span>
+            )}
+            {isProcessing && (
+              <motion.span 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="text-blue-400 font-medium text-sm block"
+              >
+                در حال پردازش صدا با هوش مصنوعی...
+              </motion.span>
+            )}
+            {!isRecording && !isProcessing && (
+              <motion.span 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-slate-500 text-sm block"
+              >
+                دکمه را نگه دارید و صحبت کنید
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
 
         <AnimatePresence>
           {parsedData && !isProcessing && parsedData.length > 0 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="w-full mt-6 bg-slate-800 rounded-xl shadow-lg border border-blue-100 overflow-hidden"
+              className="w-full mt-6 bg-slate-800 rounded-xl shadow-lg border border-blue-100/10 overflow-hidden"
             >
-              <div className="bg-blue-500/10 p-4 border-b border-blue-100 flex justify-between items-center">
+              <div className="bg-blue-500/10 p-4 border-b border-blue-100/10 flex justify-between items-center">
                 <h3 className="font-bold text-white">تایید اطلاعات تراکنش‌ها ({parsedData.length} تراکنش)</h3>
               </div>
               
@@ -299,64 +280,70 @@ export default function VoiceAssistant() {
                       <span className="bg-blue-500/20 text-white text-xs font-bold px-2 py-1 rounded">تراکنش {index + 1}</span>
                       <span className="text-sm font-medium text-white">{item.type === 'income' ? 'درآمد' : 'هزینه'}</span>
                     </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">نوع تراکنش</label>
                         <select 
                           value={item.type || 'expense'}
                           onChange={e => handleUpdateItem(index, { type: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         >
                           <option value="expense">هزینه</option>
                           <option value="income">درآمد</option>
                         </select>
                       </div>
+
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">مبلغ (تومان)</label>
                         <input 
                           type="number" 
                           value={item.amount || ''}
                           onChange={e => handleUpdateItem(index, { amount: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm" dir="ltr"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" dir="ltr"
                         />
                       </div>
+
                       <div className="sm:col-span-2">
                         <label className="block text-xs font-medium text-white mb-1">بابت (توضیحات)</label>
                         <input 
                           type="text" 
                           value={item.description || ''}
                           onChange={e => handleUpdateItem(index, { description: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         />
                       </div>
+
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">حساب / کارت</label>
                         <select 
                           value={item.accountId || ''}
                           onChange={e => handleUpdateItem(index, { accountId: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         >
                           <option value="">-- انتخاب حساب --</option>
                           {accounts?.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </select>
                         {item.card && !item.accountId && (
-                          <div className="text-xs text-white mt-1">حساب تشخیص داده شده: {item.card} (یافت نشد)</div>
+                          <div className="text-xs text-rose-400 mt-1">حساب تشخیص داده شده: {item.card} (یافت نشد)</div>
                         )}
                       </div>
+
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">پروژه (اختیاری)</label>
                         <select 
                           value={item.projectId || ''}
                           onChange={e => handleUpdateItem(index, { projectId: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         >
                           <option value="">-- انتخاب پروژه --</option>
                           {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                         {item.project && !item.projectId && (
-                          <div className="text-xs text-white mt-1">پروژه تشخیص داده شده: {item.project} (یافت نشد)</div>
+                          <div className="text-xs text-rose-400 mt-1">پروژه تشخیص داده شده: {item.project} (یافت نشد)</div>
                         )}
                       </div>
+
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">تاریخ</label>
                         <DatePicker
@@ -369,16 +356,17 @@ export default function VoiceAssistant() {
                             }
                           }}
                           containerClassName="w-full"
-                          inputClass="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                          inputClass="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
                         />
                       </div>
+
                       <div>
                         <label className="block text-xs font-medium text-white mb-1">ساعت</label>
                         <input
                           type="time"
                           value={item.time || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                           onChange={e => handleUpdateItem(index, { time: e.target.value })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-left" dir="ltr"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-left text-white" dir="ltr"
                         />
                       </div>
                     </div>
@@ -403,6 +391,7 @@ export default function VoiceAssistant() {
               
               <div className="bg-slate-900 p-4 border-t border-slate-700 flex justify-end space-x-2 space-x-reverse sticky bottom-0">
                 <button 
+                  onClick={() => setParsedData(null)}
                   className="px-6 py-2 text-white hover:bg-rose-500/10 rounded-xl transition-colors font-medium flex items-center space-x-1 space-x-reverse border border-rose-500/20"
                 >
                   <X size={18} /> <span>لغو همه</span>

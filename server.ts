@@ -9,34 +9,30 @@ dotenv.config();
 async function startServer() {
   const app = express();
   const PORT = 3000;
-
   app.use(express.json({ limit: '50mb' }));
 
   // API Route for Gemini processing
   app.post("/api/parse-speech", async (req, res) => {
     try {
       const { text, audioBase64, mimeType, projects } = req.body;
+
       if (!text && !audioBase64) {
         return res.status(400).json({ error: "Text or audio is required" });
       }
 
       let projectsContext = "";
       if (projects && Array.isArray(projects) && projects.length > 0) {
-        projectsContext = `
-Here is the list of predefined project names in the system:
+        projectsContext = `Here is the list of predefined project names in the system:
 ${projects.map((p: any) => `- ${p.name}`).join('\n')}
+IMPORTANT: You must search through these predefined projects. If the user mentions any of these names (or something very similar) even WITHOUT saying the word "پروژه" (project), you must assign that transaction to that EXACT project name in the "project" field.`;
+      }
 
-IMPORTANT: You must search through these predefined projects. If the user mentions any of these names (or something very similar) even WITHOUT saying the word "پروژه" (project), you must assign that transaction to that EXACT project name in the "project" field.
-`;
+      if (!process.env.GEMINI_API_KEY) { 
+        return res.status(500).json({ error: "کلید GEMINI_API_KEY در تنظیمات سرور (Netlify) یافت نشد. لطفا در پنل نتلیفای در بخش Environment Variables کلید خود را اضافه کنید." }); 
       }
 
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
       });
       
       const contents = [];
@@ -53,7 +49,7 @@ IMPORTANT: You must search through these predefined projects. If the user mentio
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: contents,
         config: {
           systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from either audio or text.
@@ -64,6 +60,7 @@ If the text describes a transfer from one account to another, generate TWO trans
 If it's a regular transaction, generate ONE transaction.
 IMPORTANT: If the user says "پرداخت" (paid), it is ALWAYS an 'expense'. If they say "واریز" (deposited/received), it is ALWAYS an 'income'.
 ${projectsContext}
+
 Map the extracted information to the following fields:
 - type: 'income' or 'expense'
 - amount: (number) Extract the amount. e.g., '350 میلیون' -> 350000000. 'هزار' -> 1000.
@@ -72,6 +69,7 @@ Map the extracted information to the following fields:
 - card: (string) The card or bank name if mentioned.
 - description: (string) The description/babat of the transaction.
 - date: (string, optional) YYYY-MM-DD if explicitly mentioned.
+- time: (string, optional) HH:MM format if explicitly mentioned.
 
 Return ONLY valid JSON matching the schema (which is an array of objects).`,
           responseMimeType: "application/json",
@@ -86,7 +84,8 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
                 category: { type: Type.STRING },
                 card: { type: Type.STRING },
                 description: { type: Type.STRING },
-                date: { type: Type.STRING }, time: { type: Type.STRING, description: "Time of the transaction in HH:MM format if mentioned, otherwise empty" }
+                date: { type: Type.STRING }, 
+                time: { type: Type.STRING, description: "Time of the transaction in HH:MM format if mentioned, otherwise empty" }
               },
               required: ["type", "amount", "description"]
             }
@@ -101,6 +100,7 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
       if (jsonStr.startsWith("```")) {
         jsonStr = jsonStr.replace(/```\n/, "").replace(/```$/, "").trim();
       }
+
       let data = JSON.parse(jsonStr);
       if (!Array.isArray(data)) {
         data = [data];
@@ -116,33 +116,33 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
   app.post("/api/parse-excel", async (req, res) => {
     try {
       const { csvData, projects, accounts } = req.body;
+
       if (!csvData) {
         return res.status(400).json({ error: "CSV data is required" });
       }
 
       let projectsContext = "";
       if (projects && Array.isArray(projects) && projects.length > 0) {
-        projectsContext = `
-Here is the list of predefined project names in the system:
-${projects.map((p: any) => `- ${p.name}`).join('\n')}
-`;
+        projectsContext = `Here is the list of predefined project names in the system:
+${projects.map((p: any) => `- ${p.name}`).join('\n')}`;
       }
       
       let accountsContext = "";
       if (accounts && Array.isArray(accounts) && accounts.length > 0) {
-        accountsContext = `
-Here is the list of predefined accounts in the system:
-${accounts.map((a: any) => `- ${a.name}`).join('\n')}
-`;
+        accountsContext = `Here is the list of predefined accounts in the system:
+${accounts.map((a: any) => `- ${a.name}`).join('\n')}`;
+      }
+
+      if (!process.env.GEMINI_API_KEY) { 
+        return res.status(500).json({ error: "کلید GEMINI_API_KEY در تنظیمات سرور (Netlify) یافت نشد. لطفا در پنل نتلیفای در بخش Environment Variables کلید خود را اضافه کنید." }); 
       }
 
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
       
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [csvData],
         config: {
           systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from a CSV/Excel file.
@@ -171,7 +171,8 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
                 account: { type: Type.STRING },
                 category: { type: Type.STRING },
                 description: { type: Type.STRING },
-                date: { type: Type.STRING }, time: { type: Type.STRING, description: "Time of the transaction in HH:MM format if mentioned, otherwise empty" }
+                date: { type: Type.STRING }, 
+                time: { type: Type.STRING, description: "Time of the transaction in HH:MM format if mentioned, otherwise empty" }
               },
               required: ["type", "amount", "description"]
             }
@@ -186,8 +187,10 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
       if (jsonStr.startsWith("```")) {
         jsonStr = jsonStr.replace(/```\n/, "").replace(/```$/, "").trim();
       }
+
       let data = JSON.parse(jsonStr);
       if (!Array.isArray(data)) data = [data];
+
       res.json(data);
     } catch (error) {
       console.error("Error parsing excel:", error);
@@ -211,7 +214,7 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:\${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 

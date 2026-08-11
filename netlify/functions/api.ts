@@ -8,7 +8,6 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
-// API Route for Gemini processing
 app.post("/api/parse-speech", async (req, res) => {
   try {
     const { text, audioBase64, mimeType, projects } = req.body;
@@ -24,13 +23,12 @@ ${projects.map((p: any) => `- ${p.name}`).join('\n')}
 IMPORTANT: You must search through these predefined projects. If the user mentions any of these names (or something very similar) even WITHOUT saying the word "پروژه" (project), you must assign that transaction to that EXACT project name in the "project" field.`;
     }
 
+    if (!process.env.GEMINI_API_KEY) { 
+      return res.status(500).json({ error: "کلید GEMINI_API_KEY در تنظیمات سرور (Netlify) یافت نشد." }); 
+    }
+
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
     });
     
     const contents = [];
@@ -47,7 +45,7 @@ IMPORTANT: You must search through these predefined projects. If the user mentio
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: contents,
       config: {
         systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from either audio or text.
@@ -67,6 +65,7 @@ Map the extracted information to the following fields:
 - card: (string) The card or bank name if mentioned.
 - description: (string) The description/babat of the transaction.
 - date: (string, optional) YYYY-MM-DD if explicitly mentioned.
+- time: (string, optional) HH:MM format if explicitly mentioned.
 
 Return ONLY valid JSON matching the schema (which is an array of objects).`,
         responseMimeType: "application/json",
@@ -109,7 +108,6 @@ Return ONLY valid JSON matching the schema (which is an array of objects).`,
   }
 });
 
-// API Route for Excel parsing
 app.post("/api/parse-excel", async (req, res) => {
   try {
     const { csvData, projects, accounts } = req.body;
@@ -130,13 +128,16 @@ ${projects.map((p: any) => `- ${p.name}`).join('\n')}`;
 ${accounts.map((a: any) => `- ${a.name}`).join('\n')}`;
     }
 
+    if (!process.env.GEMINI_API_KEY) { 
+      return res.status(500).json({ error: "کلید GEMINI_API_KEY در تنظیمات سرور (Netlify) یافت نشد." }); 
+    }
+
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
     });
     
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [csvData],
       config: {
         systemInstruction: `You are a helpful assistant for parsing Persian financial transactions from a CSV/Excel file.
@@ -151,6 +152,7 @@ IMPORTANT: For each row, accurately determine the following:
 - category: (string) The category if mentioned.
 - description: (string) The description/babat of the transaction.
 - date: (string) Convert the date to YYYY-MM-DD format if possible.
+
 Return ONLY valid JSON matching the schema (which is an array of objects).`,
         responseMimeType: "application/json",
         responseSchema: {
